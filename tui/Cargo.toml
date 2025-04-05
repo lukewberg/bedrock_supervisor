@@ -1,0 +1,10 @@
+[package]
+name = "tui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+color-eyre.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+git2.workspace = true
