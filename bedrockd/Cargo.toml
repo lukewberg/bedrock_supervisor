@@ -1,0 +1,11 @@
+[package]
+name = "bedrockd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tonic.workspace = true
+fork.workspace = true
+clap.workspace = true
+toml.workspace = true
+serde = { version = "1.0.219", features = ["derive"] }

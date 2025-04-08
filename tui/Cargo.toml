@@ -7,4 +7,4 @@ edition = "2024"
 color-eyre.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
-git2.workspace = true
+#git2.workspace = true
