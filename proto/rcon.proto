@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+service RCON {
+  rpc GetStatus(StatusRequest) returns (DaemonicStatus) {}
+}
+
+message StatusRequest {
+//  string time = 1;
+}
+
+message DaemonicStatus {
+  string status = 1;
+}

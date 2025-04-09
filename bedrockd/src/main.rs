@@ -1,18 +1,22 @@
 mod backup;
 mod cli;
 mod config;
+mod management;
 mod server;
+mod pid;
 
 use crate::backup::BackupManager;
 use crate::cli::Cli;
 use crate::config::Config;
+use crate::management::RconService;
+use crate::management::rcon::rcon_server::RconServer;
 use clap::Parser;
 use fork::{Fork, daemon};
-use std::fs::File;
-use std::io::Read;
 use std::process::Command;
+use tonic::transport::Server;
 
-fn main() -> std::io::Result<()> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     if cli.daemon {
@@ -21,15 +25,26 @@ fn main() -> std::io::Result<()> {
                 .output()
                 .expect("failed to execute process");
         }
+        return Ok(());
+    } else {
+        // Attempt to obtain pid lock file
+        let _lock_handle = pid::lock_pid_file()?;
+
+        println!("Running bedrockd in non-daemonic mode");
+        // Parse config file in /etc/bedrockd.conf
+        let config = Config::open()?;
+
+        let backup_manager = BackupManager::new(config.update_frequency, config.backup_dir.into());
+
+        let addr = "[::1]:10000".parse().unwrap();
+
+        let rcon = RconService {};
+
+        let svc = RconServer::new(rcon);
+
+        Server::builder().add_service(svc).serve(addr).await?;
+
     }
 
-    // Parse config  file in /etc/bedrockd.conf
-    let mut config_str = String::new();
-    File::open("/etc/bedrockd.toml")?.read_to_string(&mut config_str)?;
-    let config: Config = toml::from_str(config_str.as_str()).unwrap();
-
-    let backup_manager = BackupManager::new(config.update_frequency, config.backup_dir.into());
-    
-    
     Ok(())
 }
