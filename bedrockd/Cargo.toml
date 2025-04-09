@@ -2,6 +2,7 @@
 name = "bedrockd"
 version = "0.1.0"
 edition = "2024"
+authors = ["Luke Berg"]
 
 [dependencies]
 tonic.workspace = true

@@ -15,36 +15,40 @@ use fork::{Fork, daemon};
 use std::process::Command;
 use tonic::transport::Server;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
     if cli.daemon {
         if let Ok(Fork::Child) = daemon(false, false) {
-            Command::new("bedrockd")
-                .output()
-                .expect("failed to execute process");
+            Command::new("bedrockd").spawn().expect("failed to execute process");
         }
-        return Ok(());
+        Ok(())
     } else {
         // Attempt to obtain pid lock file
         let _lock_handle = pid::lock_pid_file()?;
 
-        println!("Running bedrockd in non-daemonic mode");
-        // Parse config file in /etc/bedrockd.conf
-        let config = Config::open()?;
-
-        let backup_manager = BackupManager::new(config.update_frequency, config.backup_dir.into());
-
-        let addr = "[::1]:10000".parse().unwrap();
-
-        let rcon = RconService {};
-
-        let svc = RconServer::new(rcon);
-
-        Server::builder().add_service(svc).serve(addr).await?;
-
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(run())?;
+        Ok(())
     }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Running bedrockd in non-daemonic mode");
+    // Parse config file in /etc/bedrockd.conf
+    let config = Config::open()?;
+
+    let backup_manager = BackupManager::new(config.backup_frequency, config.backup_dir.into());
+
+    let addr = "[::1]:10000".parse().unwrap();
+
+    let rcon = RconService {};
+
+    let svc = RconServer::new(rcon);
+
+    Server::builder().add_service(svc).serve(addr).await?;
 
     Ok(())
 }

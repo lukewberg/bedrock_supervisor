@@ -6,15 +6,49 @@ use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub update_frequency: u16,
+    pub backup_frequency: u16,
     pub backup_dir: String,
+    pub gRPC: Grpc,
+    pub server: Server
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Grpc {
+    enabled: bool,
+    port: u16,
+}
+
+impl Default for Grpc {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            port: 10000
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Server {
+    pub path: String,
+    pub binary: String,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Self {
+            binary: "bedrock_server".to_string(),
+            path: "/opt/minecraft".to_string(),
+        }
+    }
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             backup_dir: "/opt/bedrockd".into(),
-            update_frequency: 60,
+            backup_frequency: 60,
+            gRPC: Grpc::default(),
+            server: Server::default()
         }
     }
 }
