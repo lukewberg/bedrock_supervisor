@@ -2,14 +2,15 @@ mod backup;
 mod cli;
 mod config;
 mod management;
-mod server;
 mod pid;
+mod server;
+pub mod wrapper;
 
 use crate::backup::BackupManager;
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::management::RconService;
-use crate::management::rcon::rcon_server::RconServer;
+use crate::management::Rcon;
+use crate::management::rcon::rcon_service_server::RconServiceServer;
 use clap::Parser;
 use fork::{Fork, daemon};
 use std::process::Command;
@@ -20,7 +21,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if cli.daemon {
         if let Ok(Fork::Child) = daemon(false, false) {
-            Command::new("bedrockd").spawn().expect("failed to execute process");
+            Command::new("bedrockd")
+                .spawn()
+                .expect("failed to execute process");
         }
         Ok(())
     } else {
@@ -42,13 +45,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let backup_manager = BackupManager::new(config.backup_frequency, config.backup_dir.into());
 
-    let addr = "[::1]:10000".parse().unwrap();
+    if config.gRPC.enabled {
+        let addr = format!("[::1]:{}", config.gRPC.port).parse().unwrap();
 
-    let rcon = RconService {};
+        let rcon = Rcon {};
 
-    let svc = RconServer::new(rcon);
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(management::FILE_DESCRIPTOR_SET)
+            .build_v1alpha()
+            .unwrap();
 
-    Server::builder().add_service(svc).serve(addr).await?;
+        let svc = RconServiceServer::new(rcon);
+
+        Server::builder()
+            .add_service(reflection_service)
+            .add_service(svc)
+            .serve(addr)
+            .await?;
+    }
 
     Ok(())
 }

@@ -1,13 +1,53 @@
 syntax = "proto3";
 
-service RCON {
-  rpc GetStatus(StatusRequest) returns (DaemonicStatus) {}
+service RCONService {
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
+  rpc RestoreBackup(RestoreBackupRequest) returns (stream RestoreBackupProgressResponse) {}
+  rpc ServerSTDIO(stream ServerSTDIORequest) returns (stream ServerSTDIOResponse) {}
 }
 
-message StatusRequest {
-//  string time = 1;
+message ServerSTDIORequest {
+  string command = 1;
 }
 
-message DaemonicStatus {
+/// The output of the command
+message ServerSTDIOResponse {
+  string output = 1;
+  bool is_error = 2; // true if the output is an error message
+}
+
+enum BackupStatus {
+  BACKUP_STATUS_UNKNOWN = 0;
+  BACKUP_STATUS_IN_PROGRESS = 1;
+  BACKUP_STATUS_COMPLETED = 2;
+  BACKUP_STATUS_FAILED = 3;
+}
+
+message RestoreBackupProgressResponse {
+  BackupStatus status = 1;
+  string message = 2;
+  int32 progress = 3; // Progress percentage
+}
+
+message RestoreBackupRequest {
+  string backup_id = 1;
+}
+
+message BackupMetadata {
+  string id = 1;
+  string timestamp = 2;
+  int32 size = 3;
+}
+
+message ListBackupsRequest {}
+
+message ListBackupsResponse {
+  repeated BackupMetadata backups = 1;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
   string status = 1;
 }

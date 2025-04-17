@@ -2,18 +2,55 @@ pub mod rcon {
     tonic::include_proto!("_");
 }
 
-use tonic::{Request, Response, Status};
-use rcon::rcon_server::{RconServer, Rcon};
-use rcon::{DaemonicStatus, StatusRequest};
+pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("rcon");
+
+use crate::management::rcon::{
+    ListBackupsRequest, ListBackupsResponse, RestoreBackupProgressResponse, RestoreBackupRequest,
+    ServerStdioRequest, ServerStdioResponse,
+};
+use rcon::rcon_service_server::RconService;
+use rcon::{GetStatusRequest, GetStatusResponse};
+use tokio_stream::Stream;
+use tokio_stream::wrappers::ReceiverStream;
+use tonic::{Request, Response, Status, Streaming};
 
 #[derive(Debug)]
-pub struct RconService {}
+pub struct Rcon {}
 
 #[tonic::async_trait]
-impl Rcon for RconService {
-    async fn get_status(&self, request: Request<StatusRequest>) -> Result<Response<DaemonicStatus>, Status> {
-        Ok(Response::new(DaemonicStatus {
-            status: "ok".to_string(),
+impl RconService for Rcon {
+    async fn get_status(
+        &self,
+        request: Request<GetStatusRequest>,
+    ) -> Result<Response<GetStatusResponse>, Status> {
+        Ok(Response::new(GetStatusResponse {
+            status: "Ok".to_string(),
         }))
+    }
+
+    async fn list_backups(
+        &self,
+        request: Request<ListBackupsRequest>,
+    ) -> Result<Response<ListBackupsResponse>, Status> {
+        Ok(Response::new(ListBackupsResponse { backups: vec![] }))
+    }
+
+    type RestoreBackupStream = ReceiverStream<Result<RestoreBackupProgressResponse, Status>>;
+
+    async fn restore_backup(
+        &self,
+        request: Request<RestoreBackupRequest>,
+    ) -> Result<Response<Self::RestoreBackupStream>, Status> {
+        todo!()
+    }
+
+    type ServerSTDIOStream = ReceiverStream<Result<ServerStdioResponse, Status>>;
+
+    async fn server_stdio(
+        &self,
+        request: Request<Streaming<ServerStdioRequest>>,
+    ) -> Result<Response<Self::ServerSTDIOStream>, Status> {
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<ServerStdioResponse, Status>>(4);
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 }

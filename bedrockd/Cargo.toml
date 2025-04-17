@@ -6,6 +6,7 @@ authors = ["Luke Berg"]
 
 [dependencies]
 tonic.workspace = true
+tonic-reflection.workspace = true
 prost.workspace = true
 fork.workspace = true
 clap.workspace = true
@@ -13,6 +14,8 @@ toml.workspace = true
 serde = { version = "1.0.219", features = ["derive"] }
 log = "0.4.27"
 tokio.workspace = true
+tokio-stream.workspace = true
+async-stream.workspace = true
 fs2.workspace = true
 
 [build-dependencies]

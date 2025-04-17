@@ -14,8 +14,8 @@ pub struct Config {
 
 #[derive(Serialize, Deserialize)]
 pub struct Grpc {
-    enabled: bool,
-    port: u16,
+    pub enabled: bool,
+    pub port: u16,
 }
 
 impl Default for Grpc {
