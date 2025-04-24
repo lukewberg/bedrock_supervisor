@@ -15,11 +15,18 @@ use clap::Parser;
 use fork::{Fork, daemon};
 use std::process::Command;
 use tonic::transport::Server;
+use wrapper::Wrapper;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
 
+    if cli.config {
+        Config::create().expect("Failed to create config");
+        return Ok(());
+    }
+
     if cli.daemon {
+        println!("Running bedrockd in daemonic mode");
         if let Ok(Fork::Child) = daemon(false, false) {
             Command::new("bedrockd")
                 .spawn()
@@ -43,7 +50,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parse config file in /etc/bedrockd.conf
     let config = Config::open()?;
 
-    let backup_manager = BackupManager::new(config.backup_frequency, config.backup_dir.into());
+    let wrapper = Wrapper::new(config.server.path.clone().into());
+    let backup_manager =
+        BackupManager::new(config.backup_frequency, config.backup_dir.into(), wrapper);
 
     if config.gRPC.enabled {
         let addr = format!("[::1]:{}", config.gRPC.port).parse().unwrap();

@@ -1,13 +1,15 @@
-use std::{io, path::PathBuf, process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio}};
+use std::{io, path::PathBuf, process::Stdio};
 
-use tokio::sync::mpsc::Sender;
-use tonic::Status;
-
-use crate::management::rcon::ServerStdioResponse;
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::{ChildStderr, ChildStdin, ChildStdout, Command},
+};
 
 pub struct Wrapper {
     // pub mc_server_process: Command,
-    child: Child,
+    stdin: Option<ChildStdin>,
+    stdout: Option<ChildStdout>,
+    stderr: Option<ChildStderr>,
 }
 
 impl Wrapper {
@@ -20,18 +22,45 @@ impl Wrapper {
             .spawn()
             .expect("unable to start bedrock server!");
 
-        Self { child }
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take();
+        let stderr = child.stderr.take();
+
+        tokio::spawn(async move {
+            let status = child
+                .wait()
+                .await
+                .expect("Server process encountered an error");
+            println!("Server status was: {}", status);
+        });
+
+        Self {
+            stdin,
+            stdout,
+            stderr,
+        }
     }
 
-    pub fn get_stdin(&mut self) -> Option<&mut ChildStdin> {
-        self.child.stdin.as_mut()
+    pub async fn send_line(&mut self, line: &str) -> io::Result<()> {
+        let stdin = self.stdin.as_mut().unwrap();
+        stdin.write_all(line.as_bytes()).await?;
+        stdin.write_all(b"\n").await?;
+        stdin.flush().await
     }
 
-    pub fn get_stdout(&mut self) -> Option<&mut ChildStdout> {
-        self.child.stdout.as_mut()
+    pub async fn next_line(&mut self) -> io::Result<Option<String>> {
+        let mut line = String::new();
+        let stdout = self.stdout.as_mut().unwrap();
+        let mut reader = BufReader::new(stdout);
+        let num_read = reader.read_line(&mut line).await?;
+        if num_read == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(line))
+        }
     }
 
     pub fn get_stderr(&mut self) -> Option<&mut ChildStderr> {
-        self.child.stderr.as_mut()
+        self.stderr.as_mut()
     }
 }

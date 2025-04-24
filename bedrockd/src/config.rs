@@ -75,4 +75,14 @@ impl Config {
             Ok(config)
         }
     }
+
+    pub fn create() -> io::Result<()> {
+        let mut config_handle = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open("/etc/bedrockd.conf")?;
+        config_handle.write_all(toml::to_string_pretty(&Config::default()).unwrap().as_bytes())?;
+        config_handle.flush()?;
+        Ok(())
+    }
 }

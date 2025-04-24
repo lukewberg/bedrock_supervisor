@@ -5,4 +5,6 @@ use clap::Parser;
 pub struct Cli {
     #[arg(short, long)]
     pub daemon: bool,
+    #[arg(short, long)]
+    pub config: bool    
 }
