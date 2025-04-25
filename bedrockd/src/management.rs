@@ -12,9 +12,20 @@ use rcon::rcon_service_server::RconService;
 use rcon::{GetStatusRequest, GetStatusResponse};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
+use crate::backup::ServerManager;
 
-#[derive(Debug)]
-pub struct Rcon {}
+// #[derive(Debug)]
+pub struct Rcon {
+    
+}
+
+impl Rcon {
+    pub fn new(backup_manager: ServerManager) -> Self {
+        Self {
+            backup_manager
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl RconService for Rcon {
@@ -50,6 +61,7 @@ impl RconService for Rcon {
         request: Request<Streaming<ServerStdioRequest>>,
     ) -> Result<Response<Self::ServerSTDIOStream>, Status> {
         let (tx, rx) = tokio::sync::mpsc::channel::<Result<ServerStdioResponse, Status>>(4);
+        self.backup_manager.stream_stdout(tx).await?;
         Ok(Response::new(ReceiverStream::new(rx)))
     }
 }

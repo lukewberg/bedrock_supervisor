@@ -6,7 +6,7 @@ mod pid;
 mod server;
 pub mod wrapper;
 
-use crate::backup::BackupManager;
+use crate::backup::ServerManager;
 use crate::cli::Cli;
 use crate::config::Config;
 use crate::management::Rcon;
@@ -14,8 +14,11 @@ use crate::management::rcon::rcon_service_server::RconServiceServer;
 use clap::Parser;
 use fork::{Fork, daemon};
 use std::process::Command;
+use tokio::spawn;
+use tonic::Status;
 use tonic::transport::Server;
 use wrapper::Wrapper;
+use crate::management::rcon::ServerStdioResponse;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -50,14 +53,23 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parse config file in /etc/bedrockd.conf
     let config = Config::open()?;
 
-    let wrapper = Wrapper::new(config.server.path.clone().into());
-    let backup_manager =
-        BackupManager::new(config.backup_frequency, config.backup_dir.into(), wrapper);
+    let wrapper = Wrapper::new(config.server.path.clone().as_str());
+    let server_manager =
+        ServerManager::new(config.backup_frequency, config.backup_dir.into(), wrapper);
 
     if config.gRPC.enabled {
         let addr = format!("[::1]:{}", config.gRPC.port).parse().unwrap();
+        let (tx, rx) = tokio::sync::broadcast::channel::<Result<ServerStdioResponse, Status>>(4);
 
-        let rcon = Rcon {};
+        // spawn the reader task
+        spawn(async move {
+            while let Some(Ok(line)) = reader.next().await {
+                // ignore errors if no one is listening
+                let _ = tx.send(line);
+            }
+        });
+
+        let rcon = Rcon::new(server_manager);
 
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(management::FILE_DESCRIPTOR_SET)

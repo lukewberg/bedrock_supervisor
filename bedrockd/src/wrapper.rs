@@ -13,12 +13,13 @@ pub struct Wrapper {
 }
 
 impl Wrapper {
-    pub fn new(bin_path: PathBuf) -> Self {
-        let mut child = Command::new("bedrock_server")
+    pub fn new(bin_path: &str) -> Self {
+        let mut child = Command::new(format!("{}/bedrock_server", bin_path))
             .current_dir(bin_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .expect("unable to start bedrock server!");
 
