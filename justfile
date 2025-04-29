@@ -1,3 +1,6 @@
+# use PowerShell instead of sh:
+set shell := ["powershell.exe", "-c"]
+
 build-daemon:
     cargo build --package bedrockd
 

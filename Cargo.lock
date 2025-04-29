@@ -209,6 +209,7 @@ dependencies = [
  "fs2",
  "log",
  "prost",
+ "regex",
  "serde",
  "tokio",
  "tokio-stream",

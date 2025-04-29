@@ -17,6 +17,7 @@ tokio.workspace = true
 tokio-stream.workspace = true
 async-stream.workspace = true
 fs2.workspace = true
+regex.workspace = true
 
 [build-dependencies]
 tonic-build = "*"

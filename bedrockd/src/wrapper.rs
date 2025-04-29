@@ -54,7 +54,7 @@ impl Wrapper {
         // spawn the reader task
         let tx_out = tx.clone();
         let stdout_task = spawn(async move {
-            let mut stdout_handle = stdout.unwrap();
+            let stdout_handle = stdout.unwrap();
             let mut reader = BufReader::new(stdout_handle);
             while let Ok(Some(line)) = Self::next_line(&mut reader).await {
                 // ignore errors if no one is listening

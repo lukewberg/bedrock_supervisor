@@ -77,10 +77,7 @@ impl RconService for Rcon {
             }
         });
         let stream = BroadcastStream::new(rx).filter_map(|item| {
-            match item {
-                Ok(inner) => Some(inner), // Unwrap the inner `Result`
-                Err(_) => None,           // Handle `BroadcastStreamRecvError` by skipping
-            }
+            item.ok()
         });
         Ok(Response::new(Box::pin(stream)))
     }
