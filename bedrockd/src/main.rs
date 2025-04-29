@@ -1,24 +1,21 @@
-mod backup;
 mod cli;
 mod config;
 mod management;
 mod pid;
 mod server;
+mod server_manager;
 pub mod wrapper;
 
-use crate::backup::ServerManager;
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::management::Rcon;
 use crate::management::rcon::rcon_service_server::RconServiceServer;
+use crate::management::Rcon;
+use crate::server_manager::ServerManager;
 use clap::Parser;
-use fork::{Fork, daemon};
+use fork::{daemon, Fork};
 use std::process::Command;
-use tokio::spawn;
-use tonic::Status;
 use tonic::transport::Server;
 use wrapper::Wrapper;
-use crate::management::rcon::ServerStdioResponse;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
@@ -58,16 +55,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         ServerManager::new(config.backup_frequency, config.backup_dir.into(), wrapper);
 
     if config.gRPC.enabled {
-        let addr = format!("[::1]:{}", config.gRPC.port).parse().unwrap();
-        let (tx, rx) = tokio::sync::broadcast::channel::<Result<ServerStdioResponse, Status>>(4);
-
-        // spawn the reader task
-        spawn(async move {
-            while let Some(Ok(line)) = reader.next().await {
-                // ignore errors if no one is listening
-                let _ = tx.send(line);
-            }
-        });
+        let addr = format!("0.0.0.0:{}", config.gRPC.port).parse().unwrap();
 
         let rcon = Rcon::new(server_manager);
 

@@ -16,13 +16,15 @@ pub struct Config {
 pub struct Grpc {
     pub enabled: bool,
     pub port: u16,
+    pub reflection: bool,
 }
 
 impl Default for Grpc {
     fn default() -> Self {
         Self {
             enabled: true,
-            port: 10000
+            port: 10000,
+            reflection: false,
         }
     }
 }

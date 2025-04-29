@@ -1,0 +1,9 @@
+services:
+  bedrockd:
+    build: .
+    platform: "linux/x86_64"
+    ports:
+      - "10000:10000"
+      - "19132:19132/udp"
+      - "19132:19132/tcp"
+    container_name: bedrockd

@@ -8,22 +8,24 @@ use crate::management::rcon::{
     ListBackupsRequest, ListBackupsResponse, RestoreBackupProgressResponse, RestoreBackupRequest,
     ServerStdioRequest, ServerStdioResponse,
 };
+use crate::server_manager::ServerManager;
+use std::pin::Pin;
+use tokio::spawn;
+use tokio_stream::{Stream, StreamExt};
+
 use rcon::rcon_service_server::RconService;
 use rcon::{GetStatusRequest, GetStatusResponse};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tonic::{Request, Response, Status, Streaming};
-use crate::backup::ServerManager;
 
 // #[derive(Debug)]
 pub struct Rcon {
-    
+    server_manager: ServerManager,
 }
 
 impl Rcon {
-    pub fn new(backup_manager: ServerManager) -> Self {
-        Self {
-            backup_manager
-        }
+    pub fn new(server_manager: ServerManager) -> Self {
+        Self { server_manager }
     }
 }
 
@@ -54,14 +56,32 @@ impl RconService for Rcon {
         todo!()
     }
 
-    type ServerSTDIOStream = ReceiverStream<Result<ServerStdioResponse, Status>>;
+    type ServerSTDIOStream =
+        Pin<Box<dyn Stream<Item = Result<ServerStdioResponse, Status>> + Send>>;
 
     async fn server_stdio(
         &self,
         request: Request<Streaming<ServerStdioRequest>>,
     ) -> Result<Response<Self::ServerSTDIOStream>, Status> {
-        let (tx, rx) = tokio::sync::mpsc::channel::<Result<ServerStdioResponse, Status>>(4);
-        self.backup_manager.stream_stdout(tx).await?;
-        Ok(Response::new(ReceiverStream::new(rx)))
+        let rx = self.server_manager.wrapper.stdout_subscribe();
+        let input = self.server_manager.wrapper.get_stdin();
+        let mut request_stream = request.into_inner();
+        spawn(async move {
+            while let Some(message) = request_stream.next().await {
+                match message {
+                    Ok(inner) => input.send(inner).await.unwrap(),
+                    Err(_) => {
+                        todo!()
+                    }
+                };
+            }
+        });
+        let stream = BroadcastStream::new(rx).filter_map(|item| {
+            match item {
+                Ok(inner) => Some(inner), // Unwrap the inner `Result`
+                Err(_) => None,           // Handle `BroadcastStreamRecvError` by skipping
+            }
+        });
+        Ok(Response::new(Box::pin(stream)))
     }
 }
