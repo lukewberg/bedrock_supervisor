@@ -5,14 +5,16 @@ mod pid;
 mod server;
 mod server_manager;
 pub mod wrapper;
+mod backup_manager;
 
+use std::env;
 use crate::cli::Cli;
 use crate::config::Config;
-use crate::management::rcon::rcon_service_server::RconServiceServer;
 use crate::management::Rcon;
+use crate::management::rcon::rcon_service_server::RconServiceServer;
 use crate::server_manager::ServerManager;
 use clap::Parser;
-use fork::{daemon, Fork};
+use fork::{Fork, daemon};
 use std::process::Command;
 use tonic::transport::Server;
 use wrapper::Wrapper;
@@ -50,9 +52,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Parse config file in /etc/bedrockd.conf
     let config = Config::open()?;
 
+    env::set_current_dir(config.server.path.clone())?;
     let wrapper = Wrapper::new(config.server.path.clone().as_str());
     let server_manager =
-        ServerManager::new(config.backup_frequency, config.backup_dir.into(), wrapper);
+        ServerManager::new(config.backup, wrapper);
+
+    server_manager.spawn_backup_task();
+    server_manager.spawn_scheduled_backup_task();
 
     if config.gRPC.enabled {
         let addr = format!("0.0.0.0:{}", config.gRPC.port).parse().unwrap();

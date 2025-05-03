@@ -6,10 +6,9 @@ use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
-    pub backup_frequency: u16,
-    pub backup_dir: String,
     pub gRPC: Grpc,
-    pub server: Server
+    pub server: Server,
+    pub backup: Backup,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -44,13 +43,46 @@ impl Default for Server {
     }
 }
 
+#[derive(Serialize, Deserialize)]
+pub enum BackupFrequency {
+    MINUTE,
+    HOURLY,
+    DAILY,
+    WEEKLY,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct BackupSchedule {
+    pub frequency: BackupFrequency,
+    pub value: u16,
+    pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Backup {
+    pub path: String,
+    pub schedule: Vec<BackupSchedule>,
+}
+
+impl Default for Backup {
+    fn default() -> Self {
+        Self {
+            schedule: vec![BackupSchedule {
+                frequency: BackupFrequency::MINUTE,
+                value: 5,
+                enabled: true,
+            }],
+            path: "/opt/minecraft".to_string(),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
-            backup_dir: "/opt/bedrockd".into(),
-            backup_frequency: 60,
             gRPC: Grpc::default(),
-            server: Server::default()
+            server: Server::default(),
+            backup: Backup::default(),
         }
     }
 }
@@ -83,7 +115,11 @@ impl Config {
             .write(true)
             .create(true)
             .open("/etc/bedrockd.conf")?;
-        config_handle.write_all(toml::to_string_pretty(&Config::default()).unwrap().as_bytes())?;
+        config_handle.write_all(
+            toml::to_string_pretty(&Config::default())
+                .unwrap()
+                .as_bytes(),
+        )?;
         config_handle.flush()?;
         Ok(())
     }

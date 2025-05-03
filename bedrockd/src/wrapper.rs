@@ -46,7 +46,7 @@ impl Wrapper {
             println!("Server status was: {}", status);
         });
         // Broadcast channel for stdout
-        let (tx, rx) = tokio::sync::broadcast::channel::<Result<ServerStdioResponse, Status>>(4);
+        let (tx, rx) = tokio::sync::broadcast::channel::<Result<ServerStdioResponse, Status>>(64);
 
         // MPSC channel for stdin
         let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<ServerStdioRequest>(32);

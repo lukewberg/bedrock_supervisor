@@ -24,3 +24,5 @@ tokio-stream = { version = "0.1.17", features = ["sync"] }
 async-stream = "0.3.6"
 fs2 = "*"
 regex = "1.11.1"
+flate2 = "*"
+tar = "*"

@@ -76,9 +76,15 @@ impl RconService for Rcon {
                 };
             }
         });
-        let stream = BroadcastStream::new(rx).filter_map(|item| {
-            item.ok()
-        });
+        let stream = BroadcastStream::new(rx).filter_map(|item| item.ok());
         Ok(Response::new(Box::pin(stream)))
+    }
+}
+
+impl From<&str> for ServerStdioRequest {
+    fn from(value: &str) -> Self {
+        Self {
+            command: value.to_string(),
+        }
     }
 }
