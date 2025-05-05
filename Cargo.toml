@@ -26,3 +26,4 @@ fs2 = "*"
 regex = "1.11.1"
 flate2 = "*"
 tar = "*"
+uuid = { version = "*", features = ["v4"] }

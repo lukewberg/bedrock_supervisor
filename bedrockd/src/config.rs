@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
-use std::{fs, io};
+use std::io;
 use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize, Deserialize)]
@@ -43,7 +43,7 @@ impl Default for Server {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum BackupFrequency {
     MINUTE,
     HOURLY,
@@ -51,16 +51,17 @@ pub enum BackupFrequency {
     WEEKLY,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct BackupSchedule {
     pub frequency: BackupFrequency,
     pub value: u16,
     pub enabled: bool,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Backup {
     pub path: String,
+    pub level_name: String,
     pub schedule: Vec<BackupSchedule>,
 }
 
@@ -73,6 +74,7 @@ impl Default for Backup {
                 enabled: true,
             }],
             path: "/opt/minecraft".to_string(),
+            level_name: "Bedrock level".to_string(),
         }
     }
 }

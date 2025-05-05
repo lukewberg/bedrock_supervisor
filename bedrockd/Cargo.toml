@@ -20,6 +20,8 @@ fs2.workspace = true
 regex.workspace = true
 flate2.workspace = true
 tar.workspace = true
+uuid.workspace = true
+color-eyre.workspace = true
 
 [build-dependencies]
 tonic-build = "*"

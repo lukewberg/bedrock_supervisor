@@ -8,7 +8,6 @@ use crate::management::rcon::{
     ListBackupsRequest, ListBackupsResponse, RestoreBackupProgressResponse, RestoreBackupRequest,
     ServerStdioRequest, ServerStdioResponse,
 };
-use crate::server_manager::ServerManager;
 use std::pin::Pin;
 use tokio::spawn;
 use tokio_stream::{Stream, StreamExt};
@@ -17,15 +16,18 @@ use rcon::rcon_service_server::RconService;
 use rcon::{GetStatusRequest, GetStatusResponse};
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tonic::{Request, Response, Status, Streaming};
+use crate::backup_manager::BackupManager;
+use crate::wrapper::Wrapper;
 
 // #[derive(Debug)]
 pub struct Rcon {
-    server_manager: ServerManager,
+    backup_manager: BackupManager,
+    wrapper: Wrapper
 }
 
 impl Rcon {
-    pub fn new(server_manager: ServerManager) -> Self {
-        Self { server_manager }
+    pub fn new(server_manager: BackupManager, wrapper: Wrapper) -> Self {
+        Self { backup_manager: server_manager, wrapper }
     }
 }
 
@@ -63,8 +65,8 @@ impl RconService for Rcon {
         &self,
         request: Request<Streaming<ServerStdioRequest>>,
     ) -> Result<Response<Self::ServerSTDIOStream>, Status> {
-        let rx = self.server_manager.wrapper.stdout_subscribe();
-        let input = self.server_manager.wrapper.get_stdin();
+        let rx = self.wrapper.stdout_subscribe();
+        let input = self.wrapper.get_stdin();
         let mut request_stream = request.into_inner();
         spawn(async move {
             while let Some(message) = request_stream.next().await {
