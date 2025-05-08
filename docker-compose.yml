@@ -8,4 +8,4 @@ services:
       - "19132:19132/tcp"
     container_name: bedrockd
     volumes:
-      - ./backup:/opt/bedrockd
+      - ./backup:/opt/minecraft/backup

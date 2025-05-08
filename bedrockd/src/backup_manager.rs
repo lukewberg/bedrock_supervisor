@@ -1,5 +1,6 @@
-use crate::config::Backup;
+use crate::config::{Backup, BackupFrequency, BackupSchedule};
 use crate::management::rcon::{ServerStdioRequest, ServerStdioResponse};
+use chrono::{TimeDelta, Timelike, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use regex::Regex;
@@ -14,7 +15,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
-use tokio::time::interval;
+use tokio::time::{interval, sleep};
 use tonic::Status;
 use uuid::Uuid;
 
@@ -53,16 +54,28 @@ impl BackupManager {
         }
     }
 
-    pub async fn spawn_scheduled_backup_task(&self) -> (JoinHandle<()>, JoinHandle<()>) {
+    pub fn create_scheduled_tasks(&mut self) -> () {
+        let schedules: Vec<_> = self.backup_config.schedule.drain(0..).collect();
+        for schedule in schedules {
+            if !schedule.enabled {
+                return;
+            }
+            self.spawn_scheduled_backup_task(schedule);
+        }
+    }
+
+    pub fn spawn_scheduled_backup_task(
+        &self,
+        schedule: BackupSchedule,
+    ) -> (JoinHandle<()>, JoinHandle<()>) {
         let stdin = self.stdin.clone();
         let save_handle = spawn(async move {
-            let mut backup_interval = interval(Duration::from_secs(300));
+            // let mut backup_interval = interval(Duration::from_secs(300));
             let mut cmd_interval = interval(Duration::from_secs(5));
             println!("Setup intervals");
-            cmd_interval.tick().await;
-            backup_interval.tick().await; // Wait for the first interval
+            cmd_interval.tick().await; // Wait for the first interval
             loop {
-                backup_interval.tick().await;
+                Self::scheduled_wait(&schedule).await;
                 stdin
                     .send("say §g§l[bedrockd]§r Starting server backup...".into())
                     .await
@@ -133,7 +146,46 @@ impl BackupManager {
         // "(?P<path>\w+ ?\w+/\w*/*\w*-*\.*\w*):(?P<size>\d*)"gm
     }
 
-    pub fn check_path(&self) -> bool {
+    async fn scheduled_wait(schedule: &BackupSchedule) {
+        match schedule.frequency {
+            BackupFrequency::MINUTE => {
+                let mut interval = interval(Duration::from_secs(60 * (schedule.value as u64)));
+                interval.tick().await;
+                interval.tick().await;
+            }
+            BackupFrequency::HOURLY => {
+                let mut interval = interval(Duration::from_secs(3600 * (schedule.value as u64)));
+                interval.tick().await;
+                interval.tick().await;
+            }
+            BackupFrequency::DAILY => {
+                let now = Utc::now();
+                let hour = (schedule.value / 100) as u32;
+                let minute = (schedule.value % 100) as u32;
+                // Calculate next run time
+                // let scheduled_time = NaiveTime::from_hms_opt(hour, minute, 0).unwrap();
+                let scheduled_time = now
+                    .with_hour(hour)
+                    .unwrap()
+                    .with_minute(minute)
+                    .unwrap()
+                    .with_second(0)
+                    .unwrap();
+                if now <= scheduled_time {
+                    // Calculate time to next
+                    let next = scheduled_time + TimeDelta::days(1);
+                    let time_until = (next - now).num_seconds();
+                    sleep(Duration::from_secs(time_until as u64)).await;
+                }
+                // let mut next = Utc::now().time().add
+            }
+            BackupFrequency::WEEKLY => {
+                todo!("Weekly schedule not yet implemented!")
+            }
+        }
+    }
+
+    fn check_path(&self) -> bool {
         Path::new(&self.backup_config.path).exists()
     }
 

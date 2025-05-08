@@ -54,12 +54,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     env::set_current_dir(config.server.path.clone())?;
     let wrapper = Wrapper::new(config.server.path.clone().as_str());
-    let backup_manager = BackupManager::new(
+    let mut backup_manager = BackupManager::new(
         config.backup,
         wrapper.stdout_subscribe(),
         wrapper.get_stdin(),
     );
-    backup_manager.spawn_scheduled_backup_task().await;
+    backup_manager.create_scheduled_tasks();
 
     // server_manager.spawn_backup_task();
     // server_manager.spawn_scheduled_backup_task();
