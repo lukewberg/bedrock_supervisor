@@ -173,6 +173,10 @@ impl BackupManager {
                     .unwrap();
                 if now <= scheduled_time {
                     // Calculate time to next
+                    let next = scheduled_time - now;
+                    let time_until = (next).num_seconds();
+                    sleep(Duration::from_secs(time_until as u64)).await;
+                } else {
                     let next = scheduled_time + TimeDelta::days(1);
                     let time_until = (next - now).num_seconds();
                     sleep(Duration::from_secs(time_until as u64)).await;
