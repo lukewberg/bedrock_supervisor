@@ -1,6 +1,6 @@
 use crate::config::{Backup, BackupFrequency, BackupSchedule};
 use crate::management::rcon::{ServerStdioRequest, ServerStdioResponse};
-use chrono::{TimeDelta, Timelike, Utc};
+use chrono::{Datelike, TimeDelta, Timelike, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use regex::Regex;
@@ -54,7 +54,7 @@ impl BackupManager {
         }
     }
 
-    pub fn create_scheduled_tasks(&mut self) -> () {
+    pub fn create_scheduled_tasks(&mut self) {
         let schedules: Vec<_> = self.backup_config.schedule.drain(0..).collect();
         for schedule in schedules {
             if !schedule.enabled {
@@ -148,17 +148,17 @@ impl BackupManager {
 
     async fn scheduled_wait(schedule: &BackupSchedule) {
         match schedule.frequency {
-            BackupFrequency::MINUTE => {
+            BackupFrequency::Minute => {
                 let mut interval = interval(Duration::from_secs(60 * (schedule.value as u64)));
                 interval.tick().await;
                 interval.tick().await;
             }
-            BackupFrequency::HOURLY => {
+            BackupFrequency::Hourly => {
                 let mut interval = interval(Duration::from_secs(3600 * (schedule.value as u64)));
                 interval.tick().await;
                 interval.tick().await;
             }
-            BackupFrequency::DAILY => {
+            BackupFrequency::Daily => {
                 let now = Utc::now();
                 let hour = (schedule.value / 100) as u32;
                 let minute = (schedule.value % 100) as u32;
@@ -183,8 +183,16 @@ impl BackupManager {
                 }
                 // let mut next = Utc::now().time().add
             }
-            BackupFrequency::WEEKLY => {
-                todo!("Weekly schedule not yet implemented!")
+            BackupFrequency::Weekly => {
+                let now = Utc::now();
+                let current_weekday = now.weekday().num_days_from_monday();
+                let target_weekday = schedule.value as u32;
+                let days_until = match (target_weekday + 7 - current_weekday) % 7 {
+                    0 => 7, // same weekday — wait a full week
+                    d => d,
+                };
+                let time_until = TimeDelta::days(days_until as i64).num_seconds();
+                sleep(Duration::from_secs(time_until as u64)).await;
             }
         }
     }
@@ -205,6 +213,7 @@ impl BackupManager {
         let archive_name = format!("archive-{}.tar.gz", id);
         let file = OpenOptions::new()
             .write(true)
+            .truncate(true)
             .create(true)
             .open(dir.join(archive_name))?;
         Ok(file)

@@ -6,6 +6,7 @@ authors = ["Luke Berg"]
 
 [dependencies]
 tonic.workspace = true
+tonic-prost = "*"
 tonic-reflection.workspace = true
 prost.workspace = true
 fork.workspace = true
@@ -25,4 +26,5 @@ color-eyre.workspace = true
 chrono.workspace = true
 
 [build-dependencies]
-tonic-build = "*"
+tonic-prost-build = "*"
+protoc-bin-vendored = "*"

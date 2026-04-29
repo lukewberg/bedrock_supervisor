@@ -1,33 +1,36 @@
 pub mod rcon {
-    tonic::include_proto!("_");
+    tonic::include_proto!("rcon.v1");
 }
 
 pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("rcon");
 
 use crate::management::rcon::{
-    ListBackupsRequest, ListBackupsResponse, RestoreBackupProgressResponse, RestoreBackupRequest,
+    ListBackupsRequest, ListBackupsResponse, RestoreBackupRequest, RestoreBackupResponse,
     ServerStdioRequest, ServerStdioResponse,
 };
 use std::pin::Pin;
 use tokio::spawn;
 use tokio_stream::{Stream, StreamExt};
 
+use crate::backup_manager::BackupManager;
+use crate::wrapper::Wrapper;
 use rcon::rcon_service_server::RconService;
 use rcon::{GetStatusRequest, GetStatusResponse};
 use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use tonic::{Request, Response, Status, Streaming};
-use crate::backup_manager::BackupManager;
-use crate::wrapper::Wrapper;
 
 // #[derive(Debug)]
 pub struct Rcon {
     backup_manager: BackupManager,
-    wrapper: Wrapper
+    wrapper: Wrapper,
 }
 
 impl Rcon {
     pub fn new(server_manager: BackupManager, wrapper: Wrapper) -> Self {
-        Self { backup_manager: server_manager, wrapper }
+        Self {
+            backup_manager: server_manager,
+            wrapper,
+        }
     }
 }
 
@@ -49,7 +52,7 @@ impl RconService for Rcon {
         Ok(Response::new(ListBackupsResponse { backups: vec![] }))
     }
 
-    type RestoreBackupStream = ReceiverStream<Result<RestoreBackupProgressResponse, Status>>;
+    type RestoreBackupStream = ReceiverStream<Result<RestoreBackupResponse, Status>>;
 
     async fn restore_backup(
         &self,

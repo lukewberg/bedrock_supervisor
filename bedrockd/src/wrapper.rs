@@ -69,7 +69,7 @@ impl Wrapper {
         let stdin_task = spawn(async move {
             let mut stdin_handle = stdin.unwrap();
             while let Some(request) = rx_in.recv().await {
-                let result = Self::send_line(&mut stdin_handle, &request.command.as_str()).await;
+                let result = Self::send_line(&mut stdin_handle, request.command.as_str()).await;
                 match result {
                     Ok(_) => (),
                     Err(_) => {

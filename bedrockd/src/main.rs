@@ -64,8 +64,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     // server_manager.spawn_backup_task();
     // server_manager.spawn_scheduled_backup_task();
 
-    if config.gRPC.enabled {
-        let addr = format!("0.0.0.0:{}", config.gRPC.port).parse().unwrap();
+    if config.grpc.enabled {
+        let addr = format!("0.0.0.0:{}", config.grpc.port).parse().unwrap();
 
         let rcon = Rcon::new(backup_manager, wrapper);
 

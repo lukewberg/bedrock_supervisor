@@ -1,9 +1,10 @@
 syntax = "proto3";
+package rcon.v1;
 
 service RCONService {
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {}
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
-  rpc RestoreBackup(RestoreBackupRequest) returns (stream RestoreBackupProgressResponse) {}
+  rpc RestoreBackup(RestoreBackupRequest) returns (stream RestoreBackupResponse) {}
   rpc ServerSTDIO(stream ServerSTDIORequest) returns (stream ServerSTDIOResponse) {}
 }
 
@@ -18,13 +19,13 @@ message ServerSTDIOResponse {
 }
 
 enum BackupStatus {
-  BACKUP_STATUS_UNKNOWN = 0;
+  BACKUP_STATUS_UNSPECIFIED = 0;
   BACKUP_STATUS_IN_PROGRESS = 1;
   BACKUP_STATUS_COMPLETED = 2;
   BACKUP_STATUS_FAILED = 3;
 }
 
-message RestoreBackupProgressResponse {
+message RestoreBackupResponse {
   BackupStatus status = 1;
   string message = 2;
   int32 progress = 3; // Progress percentage

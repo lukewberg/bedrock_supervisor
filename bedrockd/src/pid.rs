@@ -4,6 +4,7 @@ pub fn lock_pid_file() -> std::io::Result<File> {
     let pid_handle = OpenOptions::new()
         .read(true)
         .write(true)
+        .truncate(true)
         .create(true)
         .open("/var/run/bedrockd.pid")?;
 

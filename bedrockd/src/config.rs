@@ -3,9 +3,9 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::{Read, Write};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Config {
-    pub gRPC: Grpc,
+    pub grpc: Grpc,
     pub server: Server,
     pub backup: Backup,
 }
@@ -44,10 +44,10 @@ impl Default for Server {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub enum BackupFrequency {
-    MINUTE,
-    HOURLY,
-    DAILY,
-    WEEKLY,
+    Minute,
+    Hourly,
+    Daily,
+    Weekly,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -69,7 +69,7 @@ impl Default for Backup {
     fn default() -> Self {
         Self {
             schedule: vec![BackupSchedule {
-                frequency: BackupFrequency::MINUTE,
+                frequency: BackupFrequency::Minute,
                 value: 5,
                 limit: 15,
                 enabled: true,
@@ -80,22 +80,13 @@ impl Default for Backup {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            gRPC: Grpc::default(),
-            server: Server::default(),
-            backup: Backup::default(),
-        }
-    }
-}
-
 impl Config {
     pub fn open() -> io::Result<Self> {
         let mut config_str = String::new();
         let mut config_handle = OpenOptions::new()
             .read(true)
             .write(true)
+            .truncate(false)
             .create(true)
             .open("/etc/bedrockd.conf")?;
         config_handle.read_to_string(&mut config_str)?;
@@ -116,6 +107,7 @@ impl Config {
     pub fn create() -> io::Result<()> {
         let mut config_handle = OpenOptions::new()
             .write(true)
+            .truncate(true)
             .create(true)
             .open("/etc/bedrockd.conf")?;
         config_handle.write_all(
