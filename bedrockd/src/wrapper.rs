@@ -35,6 +35,7 @@ impl Wrapper {
     pub fn new(bin_path: &str) -> Self {
         let mut child = Command::new(format!("{}/bedrock_server", bin_path))
             .current_dir(bin_path)
+            .env("LD_LIBRARY_PATH", ".")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
