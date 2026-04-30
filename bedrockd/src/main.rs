@@ -2,7 +2,6 @@ mod backup_manager;
 mod cli;
 mod config;
 mod management;
-mod pid;
 mod server;
 pub mod wrapper;
 
@@ -36,9 +35,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         Ok(())
     } else {
-        // Attempt to obtain pid lock file
-        let _lock_handle = pid::lock_pid_file()?;
-
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()?

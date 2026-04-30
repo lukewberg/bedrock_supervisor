@@ -6,7 +6,7 @@ pub fn lock_pid_file() -> std::io::Result<File> {
         .write(true)
         .truncate(true)
         .create(true)
-        .open("/var/run/bedrockd.pid")?;
+        .open("/var/run/bedrockd/bedrockd.pid")?;
 
     pid_handle.try_lock_exclusive()?;
     Ok(pid_handle)

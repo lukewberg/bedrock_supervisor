@@ -85,23 +85,19 @@ impl Config {
         let mut config_str = String::new();
         let mut config_handle = OpenOptions::new()
             .read(true)
-            .write(true)
-            .truncate(false)
-            .create(true)
-            .open("/etc/bedrockd.conf")?;
+            .open("/etc/bedrockd.conf")
+            .map_err(|e| {
+                if e.kind() == io::ErrorKind::NotFound {
+                    io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "Config file not found. Run `bedrockd --config` as root to create it.",
+                    )
+                } else {
+                    e
+                }
+            })?;
         config_handle.read_to_string(&mut config_str)?;
-        // Check that the contents aren't empty. If so, write default config
-        if config_str.is_empty() {
-            let default_config = Config::default();
-            let contents = toml::ser::to_string_pretty(&default_config)
-                .expect("Failed to serialize default config");
-            config_handle.write_all(contents.as_bytes())?;
-            config_handle.flush()?;
-            Ok(default_config)
-        } else {
-            let config: Self = toml::from_str(config_str.as_str()).unwrap();
-            Ok(config)
-        }
+        toml::from_str(&config_str).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     pub fn create() -> io::Result<()> {
