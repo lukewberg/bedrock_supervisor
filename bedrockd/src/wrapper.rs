@@ -1,4 +1,9 @@
-use std::{io, process::Stdio};
+use std::{
+    collections::VecDeque,
+    io,
+    process::Stdio,
+    sync::{Arc, Mutex},
+};
 
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -14,6 +19,8 @@ use tonic::Status;
 
 use crate::management::rcon::{ServerStdioRequest, ServerStdioResponse};
 
+const STDOUT_CACHE_SIZE: usize = 500;
+
 pub struct Wrapper {
     // pub mc_server_process: Command,
     stdin_task: JoinHandle<()>,
@@ -21,6 +28,7 @@ pub struct Wrapper {
     stderr: Option<ChildStderr>,
     rx: Receiver<Result<ServerStdioResponse, Status>>,
     tx: mpsc::Sender<ServerStdioRequest>,
+    line_cache: Arc<Mutex<VecDeque<ServerStdioResponse>>>,
 }
 
 impl Wrapper {
@@ -51,8 +59,11 @@ impl Wrapper {
         // MPSC channel for stdin
         let (tx_in, mut rx_in) = tokio::sync::mpsc::channel::<ServerStdioRequest>(32);
 
+        let line_cache = Arc::new(Mutex::new(VecDeque::with_capacity(STDOUT_CACHE_SIZE)));
+
         // spawn the reader task
         let tx_out = tx.clone();
+        let cache = line_cache.clone();
         let stdout_task = spawn(async move {
             let stdout_handle = stdout.unwrap();
             let mut reader = BufReader::new(stdout_handle);
@@ -62,6 +73,13 @@ impl Wrapper {
                     is_error: false,
                     output: line,
                 };
+                {
+                    let mut cache_lock = cache.lock().unwrap();
+                    if cache_lock.len() >= STDOUT_CACHE_SIZE {
+                        cache_lock.pop_front();
+                    }
+                    cache_lock.push_back(result.clone());
+                }
                 let _ = tx_out.send(Ok(result));
             }
         });
@@ -88,6 +106,7 @@ impl Wrapper {
             stderr,
             rx,
             tx: tx_in,
+            line_cache,
         }
     }
 
@@ -109,6 +128,19 @@ impl Wrapper {
 
     pub fn get_stderr(&mut self) -> Option<&mut ChildStderr> {
         self.stderr.as_mut()
+    }
+
+    /// Returns a snapshot of buffered history and a live receiver.
+    /// Subscribe before snapshotting so no lines are lost in the gap.
+    pub fn stdout_subscribe_with_history(
+        &self,
+    ) -> (
+        Vec<ServerStdioResponse>,
+        Receiver<Result<ServerStdioResponse, Status>>,
+    ) {
+        let rx = self.rx.resubscribe();
+        let history = self.line_cache.lock().unwrap().iter().cloned().collect();
+        (history, rx)
     }
 
     pub fn stdout_subscribe(&self) -> Receiver<Result<ServerStdioResponse, Status>> {

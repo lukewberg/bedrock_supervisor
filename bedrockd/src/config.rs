@@ -22,7 +22,7 @@ impl Default for Grpc {
         Self {
             enabled: true,
             port: 10000,
-            reflection: false,
+            reflection: true,
         }
     }
 }

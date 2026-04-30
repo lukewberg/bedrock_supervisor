@@ -69,7 +69,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
         let rcon = Rcon::new(backup_manager, wrapper);
 
-        let reflection_service = tonic_reflection::server::Builder::configure()
+        let reflection_v1 = tonic_reflection::server::Builder::configure()
+            .register_encoded_file_descriptor_set(management::FILE_DESCRIPTOR_SET)
+            .build_v1()
+            .unwrap();
+
+        let reflection_v1alpha = tonic_reflection::server::Builder::configure()
             .register_encoded_file_descriptor_set(management::FILE_DESCRIPTOR_SET)
             .build_v1alpha()
             .unwrap();
@@ -77,7 +82,8 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         let svc = RconServiceServer::new(rcon);
 
         Server::builder()
-            .add_service(reflection_service)
+            .add_service(reflection_v1)
+            .add_service(reflection_v1alpha)
             .add_service(svc)
             .serve(addr)
             .await?;

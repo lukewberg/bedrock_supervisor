@@ -4,10 +4,12 @@ use chrono::{Datelike, TimeDelta, Timelike, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use regex::Regex;
+use std::collections::HashSet;
 use std::fs::{File, OpenOptions};
 use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tar::{Builder, Header};
 use tokio::spawn;
@@ -15,7 +17,7 @@ use tokio::sync::broadcast::Receiver;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::mpsc::Sender;
 use tokio::task::JoinHandle;
-use tokio::time::{interval, sleep};
+use tokio::time::sleep;
 use tonic::Status;
 use uuid::Uuid;
 
@@ -24,11 +26,18 @@ pub struct BackupManager {
     stdout: Receiver<Result<ServerStdioResponse, Status>>,
     stdin: Sender<ServerStdioRequest>,
     regex: Regex,
+    players_online: Arc<Mutex<HashSet<String>>>,
 }
 
 pub struct BackupOutput {
     pub path: String,
     pub size: usize,
+}
+
+pub struct ArchiveInfo {
+    pub id: String,
+    pub modified: std::time::SystemTime,
+    pub size: u64,
 }
 
 impl BackupManager {
@@ -39,8 +48,8 @@ impl BackupManager {
     ) -> Self {
         let regex = Regex::new(
             format!(
-                r#"(?m)(?P<path>{}/[^\s:,]+):(?P<size>\d+)\s*,?\s*"#,
-                backup_config.level_name
+                r#"(?P<path>{}/[^\s:,]+):(?P<size>\d+)\s*,?\s*"#,
+                regex::escape(&backup_config.level_name)
             )
             .as_str(),
         )
@@ -51,119 +60,195 @@ impl BackupManager {
             stdout,
             stdin,
             regex,
+            players_online: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
+    pub fn list_backups(&self, frequency: &BackupFrequency) -> io::Result<Vec<ArchiveInfo>> {
+        let subfolder = match frequency {
+            BackupFrequency::Minute => "minute",
+            BackupFrequency::Hourly => "hourly",
+            BackupFrequency::Daily => "daily",
+            BackupFrequency::Weekly => "weekly",
+        };
+        let path = format!("{}/{}", self.backup_config.path, subfolder);
+        let dir = Path::new(&path);
+        if !dir.exists() {
+            return Ok(vec![]);
+        }
+
+        let mut archives: Vec<ArchiveInfo> = std::fs::read_dir(dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().map_or(false, |ext| ext == "gz"))
+            .filter_map(|e| {
+                let meta = e.metadata().ok()?;
+                let modified = meta.modified().ok()?;
+                let size = meta.len();
+                let filename = e.file_name();
+                let name = filename.to_string_lossy();
+                let id = name
+                    .strip_prefix("archive-")?
+                    .strip_suffix(".tar.gz")?
+                    .to_string();
+                Some(ArchiveInfo { id, modified, size })
+            })
+            .collect();
+
+        archives.sort_by_key(|a| a.modified);
+        Ok(archives)
+    }
+
     pub fn create_scheduled_tasks(&mut self) {
+        self.spawn_player_tracker();
         let schedules: Vec<_> = self.backup_config.schedule.drain(0..).collect();
         for schedule in schedules {
             if !schedule.enabled {
-                return;
+                continue;
             }
             self.spawn_scheduled_backup_task(schedule);
         }
     }
 
-    pub fn spawn_scheduled_backup_task(
-        &self,
-        schedule: BackupSchedule,
-    ) -> (JoinHandle<()>, JoinHandle<()>) {
+    fn spawn_player_tracker(&self) -> JoinHandle<()> {
+        let mut stdout = self.stdout.resubscribe();
+        let players = self.players_online.clone();
+
+        spawn(async move {
+            loop {
+                match stdout.recv().await {
+                    Ok(Ok(output)) => {
+                        let line = &output.output;
+                        if line.contains("Player connected:") || line.contains("Player disconnected:") {
+                            if let Some(xuid) = Self::parse_xuid(line) {
+                                let mut set = players.lock().unwrap();
+                                if line.contains("Player connected:") {
+                                    println!("Player joined, xuid: {xuid}");
+                                    set.insert(xuid);
+                                } else {
+                                    println!("Player left, xuid: {xuid}");
+                                    set.remove(&xuid);
+                                }
+                                println!("Players online: {}", set.len());
+                            }
+                        }
+                    }
+                    Err(RecvError::Closed) => break,
+                    Err(RecvError::Lagged(n)) => eprintln!("player tracker skipped {n} lines"),
+                    _ => {}
+                }
+            }
+        })
+    }
+
+    fn parse_xuid(line: &str) -> Option<String> {
+        let start = line.find("xuid: ")? + 6;
+        let rest = &line[start..];
+        let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        Some(rest[..end].to_string())
+    }
+
+    pub fn spawn_scheduled_backup_task(&self, schedule: BackupSchedule) -> JoinHandle<()> {
         let stdin = self.stdin.clone();
-        let save_handle = spawn(async move {
-            // let mut backup_interval = interval(Duration::from_secs(300));
-            let mut cmd_interval = interval(Duration::from_secs(5));
-            println!("Setup intervals");
-            cmd_interval.tick().await; // Wait for the first interval
+        let mut stdout = self.stdout.resubscribe();
+        let backup_config = self.backup_config.clone();
+        let regex = self.regex.clone();
+        let players_online = self.players_online.clone();
+
+        spawn(async move {
             loop {
                 Self::scheduled_wait(&schedule).await;
+
+                if players_online.lock().unwrap().is_empty() {
+                    println!("No players online, skipping backup");
+                    continue;
+                }
+
                 stdin
                     .send("say §g§l[bedrockd]§r Starting server backup...".into())
                     .await
                     .unwrap();
                 stdin.send("save hold".into()).await.unwrap();
-                cmd_interval.tick().await;
-                stdin.send("save query".into()).await.unwrap();
-            }
-        });
-        let parse_handle = spawn(Self::parse_stdout(
-            self.backup_config.clone(),
-            self.stdin.clone(),
-            self.stdout.resubscribe(),
-            self.regex.clone(),
-        ));
-        (save_handle, parse_handle)
-    }
 
-    async fn parse_stdout(
-        backup_config: Backup,
-        stdin: Sender<ServerStdioRequest>,
-        mut stdout: Receiver<Result<ServerStdioResponse, Status>>,
-        regex: Regex,
-    ) {
-        loop {
-            match stdout.recv().await {
-                Ok(Ok(output)) => {
-                    let message = output.output;
-                    if regex.is_match(message.as_str()) {
-                        println!("{message}");
-                        let mut files: Vec<BackupOutput> = Vec::new();
-                        regex.captures_iter(message.as_str()).for_each(|captures| {
-                            let (_, [path, size]) = captures.extract();
-                            let full_path = format!("./worlds/{}", path);
-                            files.push(BackupOutput {
-                                path: full_path,
-                                size: size.parse().unwrap(),
-                            });
-                        });
-                        Self::backup(&backup_config, files).unwrap();
+                // Poll with save query until the server reports files are ready.
+                // "Data saved..." and the file list arrive as two consecutive lines
+                // in response to save query — we match on the file list directly.
+                let files: Vec<BackupOutput> = 'query: loop {
+                    sleep(Duration::from_secs(3)).await;
+                    stdin.send("save query".into()).await.unwrap();
+
+                    loop {
+                        match stdout.recv().await {
+                            Ok(Ok(output)) => {
+                                if regex.is_match(&output.output) {
+                                    let files = regex
+                                        .captures_iter(&output.output)
+                                        .map(|c| {
+                                            let (_, [path, size]) = c.extract();
+                                            BackupOutput {
+                                                path: format!("./worlds/{path}"),
+                                                size: size.parse().unwrap(),
+                                            }
+                                        })
+                                        .collect();
+                                    break 'query files;
+                                }
+                                // "not completed" → stop reading this burst, re-poll
+                                if output
+                                    .output
+                                    .contains("A previous save has not been completed")
+                                {
+                                    break;
+                                }
+                                // any other line: keep reading
+                            }
+                            Err(RecvError::Closed) => return,
+                            Err(RecvError::Lagged(n)) => eprintln!("skipped {n} lines"),
+                            Ok(Err(e)) => eprintln!("upstream error: {e:?}"),
+                        }
+                    }
+                };
+
+                let subfolder = match schedule.frequency {
+                    BackupFrequency::Minute => "minute",
+                    BackupFrequency::Hourly => "hourly",
+                    BackupFrequency::Daily => "daily",
+                    BackupFrequency::Weekly => "weekly",
+                };
+                let backup_path = format!("{}/{}", backup_config.path, subfolder);
+
+                match Self::backup(&backup_path, schedule.limit, files) {
+                    Ok(_) => {
                         stdin.send("save resume".into()).await.unwrap();
                         stdin
                             .send("say §g§l[bedrockd]§r Server backup complete!".into())
                             .await
                             .unwrap();
                     }
-                }
-
-                // your upstream sent back an error
-                Ok(Err(status)) => {
-                    eprintln!("upstream error: {:?}", status);
-                }
-
-                // you fell behind; skip those messages
-                Err(RecvError::Lagged(skipped)) => {
-                    eprintln!("skipped {} lines", skipped);
-                }
-
-                // the sender(s) have all been dropped → nothing more to read
-                Err(RecvError::Closed) => {
-                    println!("stdout channel closed, ending parser");
-                    break;
+                    Err(e) => {
+                        eprintln!("Backup failed: {e}");
+                        stdin.send("save resume".into()).await.unwrap();
+                        stdin
+                            .send("say §c§l[bedrockd]§r Server backup failed!".into())
+                            .await
+                            .unwrap();
+                    }
                 }
             }
-        }
-        // disconnect regex: "Player disconnected: (?P<username>\w+[^,])"gm
-        // backup files and sizes: "(\w+ ?\w+/\w*/*\w*-*\.*\w*:(\d*))"gm
-        // "(?P<path>\w+ ?\w+/\w*/*\w*-*\.*\w*):(?P<size>\d*)"gm
+        })
     }
 
     async fn scheduled_wait(schedule: &BackupSchedule) {
         match schedule.frequency {
             BackupFrequency::Minute => {
-                let mut interval = interval(Duration::from_secs(60 * (schedule.value as u64)));
-                interval.tick().await;
-                interval.tick().await;
+                sleep(Duration::from_secs(60 * schedule.value as u64)).await;
             }
             BackupFrequency::Hourly => {
-                let mut interval = interval(Duration::from_secs(3600 * (schedule.value as u64)));
-                interval.tick().await;
-                interval.tick().await;
+                sleep(Duration::from_secs(3600 * schedule.value as u64)).await;
             }
             BackupFrequency::Daily => {
                 let now = Utc::now();
                 let hour = (schedule.value / 100) as u32;
                 let minute = (schedule.value % 100) as u32;
-                // Calculate next run time
-                // let scheduled_time = NaiveTime::from_hms_opt(hour, minute, 0).unwrap();
                 let scheduled_time = now
                     .with_hour(hour)
                     .unwrap()
@@ -171,46 +256,70 @@ impl BackupManager {
                     .unwrap()
                     .with_second(0)
                     .unwrap();
-                if now <= scheduled_time {
-                    // Calculate time to next
-                    let next = scheduled_time - now;
-                    let time_until = (next).num_seconds();
-                    sleep(Duration::from_secs(time_until as u64)).await;
+                let next = if now <= scheduled_time {
+                    scheduled_time
                 } else {
-                    let next = scheduled_time + TimeDelta::days(1);
-                    let time_until = (next - now).num_seconds();
-                    sleep(Duration::from_secs(time_until as u64)).await;
-                }
-                // let mut next = Utc::now().time().add
+                    scheduled_time + TimeDelta::days(1)
+                };
+                let secs = (next - now).num_seconds().max(0) as u64;
+                sleep(Duration::from_secs(secs)).await;
             }
             BackupFrequency::Weekly => {
                 let now = Utc::now();
                 let current_weekday = now.weekday().num_days_from_monday();
                 let target_weekday = schedule.value as u32;
                 let days_until = match (target_weekday + 7 - current_weekday) % 7 {
-                    0 => 7, // same weekday — wait a full week
+                    0 => 7,
                     d => d,
                 };
-                let time_until = TimeDelta::days(days_until as i64).num_seconds();
-                sleep(Duration::from_secs(time_until as u64)).await;
+                let secs = TimeDelta::days(days_until as i64).num_seconds() as u64;
+                sleep(Duration::from_secs(secs)).await;
             }
         }
     }
 
-    fn check_path(&self) -> bool {
-        Path::new(&self.backup_config.path).exists()
+    fn backup(path: &str, limit: u16, files: Vec<BackupOutput>) -> io::Result<()> {
+        std::fs::create_dir_all(path)?;
+        let archive = Self::build_archive(path.to_string())?;
+        Self::append_to_archive(archive, files)?;
+        Self::prune_archives(path, limit)?;
+        Ok(())
     }
 
-    fn backup(backup_config: &Backup, files: Vec<BackupOutput>) -> io::Result<()> {
-        let archive = Self::build_archive(backup_config.path.clone())?;
-        Self::append_to_archive(archive, files)?;
+    fn prune_archives(path: &str, limit: u16) -> io::Result<()> {
+        if limit == 0 {
+            return Ok(());
+        }
+
+        let mut archives: Vec<_> = std::fs::read_dir(path)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or_else(|| false, |ext| ext == "gz")
+            })
+            .filter_map(|e| {
+                let modified = e.metadata().ok()?.modified().ok()?;
+                Some((modified, e.path()))
+            })
+            .collect();
+
+        // Sort oldest first so we remove from the front
+        archives.sort_by_key(|(modified, _)| *modified);
+
+        let excess = archives.len().saturating_sub(limit as usize);
+        for (_, path) in archives.iter().take(excess) {
+            if let Err(e) = std::fs::remove_file(path) {
+                eprintln!("Failed to remove old backup {}: {e}", path.display());
+            }
+        }
+
         Ok(())
     }
 
     fn open_archive(path: String) -> io::Result<File> {
-        let dir = Path::new(path.as_str());
-        let id = Uuid::new_v4();
-        let archive_name = format!("archive-{}.tar.gz", id);
+        let dir = Path::new(&path);
+        let archive_name = format!("archive-{}.tar.gz", Uuid::new_v4());
         let file = OpenOptions::new()
             .write(true)
             .truncate(true)

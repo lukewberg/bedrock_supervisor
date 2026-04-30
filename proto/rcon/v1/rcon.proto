@@ -35,13 +35,23 @@ message RestoreBackupRequest {
   string backup_id = 1;
 }
 
+enum ScheduleType {
+  SCHEDULE_TYPE_UNSPECIFIED = 0;
+  SCHEDULE_TYPE_MINUTE = 1;
+  SCHEDULE_TYPE_HOURLY = 2;
+  SCHEDULE_TYPE_DAILY = 3;
+  SCHEDULE_TYPE_WEEKLY = 4;
+}
+
 message BackupMetadata {
   string id = 1;
   string timestamp = 2;
-  int32 size = 3;
+  int64 size = 3; // bytes
 }
 
-message ListBackupsRequest {}
+message ListBackupsRequest {
+  ScheduleType schedule_type = 1;
+}
 
 message ListBackupsResponse {
   repeated BackupMetadata backups = 1;
