@@ -79,7 +79,11 @@ impl BackupManager {
 
         let mut archives: Vec<ArchiveInfo> = std::fs::read_dir(dir)?
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "gz"))
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .map_or_else(|| false, |ext| ext == "gz")
+            })
             .filter_map(|e| {
                 let meta = e.metadata().ok()?;
                 let modified = meta.modified().ok()?;
@@ -118,18 +122,19 @@ impl BackupManager {
                 match stdout.recv().await {
                     Ok(Ok(output)) => {
                         let line = &output.output;
-                        if line.contains("Player connected:") || line.contains("Player disconnected:") {
-                            if let Some(xuid) = Self::parse_xuid(line) {
-                                let mut set = players.lock().unwrap();
-                                if line.contains("Player connected:") {
-                                    println!("Player joined, xuid: {xuid}");
-                                    set.insert(xuid);
-                                } else {
-                                    println!("Player left, xuid: {xuid}");
-                                    set.remove(&xuid);
-                                }
-                                println!("Players online: {}", set.len());
+                        if (line.contains("Player connected:")
+                            || line.contains("Player disconnected:"))
+                            && let Some(xuid) = Self::parse_xuid(line)
+                        {
+                            let mut set = players.lock().unwrap();
+                            if line.contains("Player connected:") {
+                                println!("Player joined, xuid: {xuid}");
+                                set.insert(xuid);
+                            } else {
+                                println!("Player left, xuid: {xuid}");
+                                set.remove(&xuid);
                             }
+                            println!("Players online: {}", set.len());
                         }
                     }
                     Err(RecvError::Closed) => break,
@@ -143,7 +148,9 @@ impl BackupManager {
     fn parse_xuid(line: &str) -> Option<String> {
         let start = line.find("xuid: ")? + 6;
         let rest = &line[start..];
-        let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+        let end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
         Some(rest[..end].to_string())
     }
 

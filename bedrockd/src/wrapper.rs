@@ -19,7 +19,7 @@ use tonic::Status;
 
 use crate::management::rcon::{ServerStdioRequest, ServerStdioResponse};
 
-const STDOUT_CACHE_SIZE: usize = 500;
+const STDOUT_CACHE_SIZE: usize = 200;
 
 pub struct Wrapper {
     // pub mc_server_process: Command,
