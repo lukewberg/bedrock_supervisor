@@ -179,7 +179,7 @@ impl BackupManager {
                 // Poll with save query until the server reports files are ready.
                 // "Data saved..." and the file list arrive as two consecutive lines
                 // in response to save query — we match on the file list directly.
-                let files: Vec<BackupOutput> = 'query: loop {
+                let mut files: Vec<BackupOutput> = 'query: loop {
                     sleep(Duration::from_secs(3)).await;
                     stdin.send("save query".into()).await.unwrap();
 
@@ -214,6 +214,23 @@ impl BackupManager {
                         }
                     }
                 };
+
+                // save query only lists mutable files (CURRENT, MANIFEST, .log, level.dat).
+                // .ldb SSTables are immutable and safe to copy while save hold pauses compaction.
+                let db_path = format!("./worlds/{}/db", backup_config.level_name);
+                if let Ok(entries) = std::fs::read_dir(&db_path) {
+                    for entry in entries.filter_map(|e| e.ok()) {
+                        let path = entry.path();
+                        if path.extension().map_or(false, |ext| ext == "ldb") {
+                            if let Ok(meta) = entry.metadata() {
+                                files.push(BackupOutput {
+                                    path: path.to_string_lossy().into_owned(),
+                                    size: meta.len() as usize,
+                                });
+                            }
+                        }
+                    }
+                }
 
                 let subfolder = match schedule.frequency {
                     BackupFrequency::Minute => "minute",
